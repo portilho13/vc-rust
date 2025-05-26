@@ -73,10 +73,47 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
     Ok(tk)
 }
 
+pub fn uchar_to_bit(datauchar: &mut [u8], databit: &[u8], width: i32, height: i32) {
+    let x: i32;
+    let y: i32;
+    let mut countbits: i32;
+    let mut pos: i128;
+    let mut counttotalbytes: i128;
+
+    let mut p = databit.to_vec();
+    let mut p_idx = 0;
+
+    p[p_idx] = 0;
+    counttotalbytes = 0;
+    countbits = 1;
+
+
+
+    for y in 0..height {
+        for x in 0..width {
+            pos = (y * width + x) as i128;
+
+            if (countbits <= 8) {
+                p[p_idx] |= ((datauchar[pos as usize] == 0) as u8) << (8 - countbits);
+
+                countbits += 1;
+            }
+            if ((countbits > 8) || (x == width - 1)) {
+                p_idx += 1;
+                p[p_idx] = 0;
+                countbits = 1;
+                counttotalbytes += 1;
+            }
+        }
+    }
+}
+
 pub fn bit_to_uchar(databit: &[u8], datauchar: &mut [u8], width: i32, height: i32) {
     let x: i32;
     let y: i32;
     let mut countbits: i32;
+
+    let mut pos: i128;
 
     let p: &[u8] = databit;
     let mut p_idx = 0;
@@ -84,7 +121,7 @@ pub fn bit_to_uchar(databit: &[u8], datauchar: &mut [u8], width: i32, height: i3
     countbits = 1;
     for y in 0..height {
         for x in 0..width {
-            let pos = y * width + x;
+            pos = (y * width + x) as i128;
 
             if (countbits <= 8) {
                 let result = if (p[p_idx as usize] & (1 << (8 - countbits))) != 0 {
