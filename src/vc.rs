@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{self, Result, Write};
+use std::io::{self, Result, Seek, Write};
 use std::io::{BufRead, BufReader, Read};
 use std::sync::mpsc::channel;
 
@@ -31,7 +31,7 @@ impl IVC {
 }
 
 
-pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
+pub fn netpbm_get_token(file_name: &str) -> io::Result<(Vec<String>, usize)> {
     let file = File::open(file_name)?;
     let mut r = BufReader::new(file);
     let mut tk: Vec<String> = Vec::new();
@@ -45,7 +45,7 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
         // Skip whitespace and comments
         let b = loop {
             if r.read_exact(&mut byte).is_err() {
-                return Ok(tk); // EOF
+                return Ok((tk, bytecount)); // EOF
             }
             bytecount += 1;
 
@@ -100,7 +100,7 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
     }
 
     println!("Header byte count: {}", bytecount);
-    Ok(tk)
+    Ok((tk, bytecount))
 }
 
 
@@ -183,12 +183,9 @@ pub fn vc_read_image(file_name: &str) -> IVC {
 
     let mut image: IVC;
 
-    let _ = match File::open(file_name) {
-        Ok(f) => f,
-        Err(e) => panic!("{}", e),
-    }; // Panic if file doesnt exist
+    let mut file = File::open(file_name).unwrap(); // Panic if file doesnt exist
 
-    let file_content = netpbm_get_token(file_name).unwrap();
+    let (file_content, bytecount) = netpbm_get_token(file_name).unwrap();
     let header = file_content.get(0..4).unwrap();
     println!("header: {:?}", header);
 
@@ -210,6 +207,8 @@ pub fn vc_read_image(file_name: &str) -> IVC {
         image = IVC::new(width, height, channels, levels);
 
     }
+
+    file.seek(io::SeekFrom::Start((bytecount as u64))).unwrap();
 
     image
 }
