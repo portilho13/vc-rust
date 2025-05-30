@@ -1,10 +1,10 @@
 use std::ffi::c_void;
 use std::fs::File;
-use std::io;
+use std::io::{self, Result, Write};
 use std::io::{BufRead, BufReader, Read};
 use std::sync::mpsc::channel;
 
-struct IVC {
+pub struct IVC {
     pub data: Vec<u8>,
     pub width: i32,
     pub height: i32,
@@ -37,6 +37,8 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
     let mut tk: Vec<String> = Vec::new();
     let mut buf = Vec::<u8>::new();
 
+    let mut bytecount = 0;
+
     loop {
         let mut byte = [0u8; 1];
 
@@ -45,6 +47,7 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
             if r.read_exact(&mut byte).is_err() {
                 return Ok(tk); // EOF
             }
+            bytecount += 1;
 
             let b = byte[0];
 
@@ -52,7 +55,9 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
                 continue;
             } else if b == b'#' {
                 // Skip the rest of the comment line
-                r.read_until(b'\n', &mut Vec::new())?;
+                let mut dummy = Vec::new();
+                let bytes_read = r.read_until(b'\n', &mut dummy)?;
+                bytecount += bytes_read;
                 continue;
             } else {
                 break b; // Start of a token
@@ -66,6 +71,7 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
         loop {
             match r.read_exact(&mut byte) {
                 Ok(()) => {
+                    bytecount += 1;
                     let b = byte[0];
 
                     if b.is_ascii_whitespace() {
@@ -73,8 +79,9 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
                     }
 
                     if b == b'#' {
-                        // Skip rest of comment and end token
-                        r.read_until(b'\n', &mut Vec::new())?;
+                        let mut dummy = Vec::new();
+                        let bytes_read = r.read_until(b'\n', &mut dummy)?;
+                        bytecount += bytes_read;
                         break;
                     }
 
@@ -86,8 +93,17 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<Vec<String>> {
 
         let token = String::from_utf8_lossy(&buf).to_string();
         tk.push(token);
+
+        if tk.len() == 4 {
+            break;
+        }
     }
+
+    println!("Header byte count: {}", bytecount);
+    Ok(tk)
 }
+
+
 
 fn uchar_to_bit(datauchar: &mut [u8], databit: &[u8], width: i32, height: i32) {
     let x: i32;
@@ -156,7 +172,7 @@ fn bit_to_uchar(databit: &[u8], datauchar: &mut [u8], width: i32, height: i32) {
     }
 }
 
-pub fn vc_read_image(file_name: &str) {
+pub fn vc_read_image(file_name: &str) -> IVC {
 
     let height: i32;
     let width: i32;
@@ -192,13 +208,8 @@ pub fn vc_read_image(file_name: &str) {
         image = IVC::new(width, height, channels, levels);
     } else {
         image = IVC::new(width, height, channels, levels);
-        let data_tokens = &file_content[4..];
-        let bytes: Vec<u8> = data_tokens
-            .iter()
-            .flat_map(|s| s.as_bytes())
-            .copied()
-            .collect();
 
-        image.data = bytes;
     }
+
+    image
 }
