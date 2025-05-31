@@ -1,8 +1,6 @@
-use std::ffi::c_void;
 use std::fs::File;
 use std::io::{self, Result, Seek, Write};
 use std::io::{BufRead, BufReader, Read};
-use std::sync::mpsc::channel;
 
 pub struct IVC {
     pub data: Vec<u8>,
@@ -99,78 +97,11 @@ pub fn netpbm_get_token(file_name: &str) -> io::Result<(Vec<String>, usize)> {
         }
     }
 
-    println!("Header byte count: {}", bytecount);
     Ok((tk, bytecount))
 }
 
 
 
-fn uchar_to_bit(datauchar: &mut [u8], databit: &[u8], width: i32, height: i32) {
-    let x: i32;
-    let y: i32;
-    let mut countbits: i32;
-    let mut pos: i128;
-    let mut counttotalbytes: i128;
-
-    let mut p = databit.to_vec();
-    let mut p_idx = 0;
-
-    p[p_idx] = 0;
-    counttotalbytes = 0;
-    countbits = 1;
-
-
-
-    for y in 0..height {
-        for x in 0..width {
-            pos = (y * width + x) as i128;
-
-            if (countbits <= 8) {
-                p[p_idx] |= ((datauchar[pos as usize] == 0) as u8) << (8 - countbits);
-
-                countbits += 1;
-            }
-            if ((countbits > 8) || (x == width - 1)) {
-                p_idx += 1;
-                p[p_idx] = 0;
-                countbits = 1;
-                counttotalbytes += 1;
-            }
-        }
-    }
-}
-
-fn bit_to_uchar(databit: &[u8], datauchar: &mut [u8], width: i32, height: i32) {
-    let x: i32;
-    let y: i32;
-    let mut countbits: i32;
-
-    let mut pos: i128;
-
-    let p: &[u8] = databit;
-    let mut p_idx = 0;
-
-    countbits = 1;
-    for y in 0..height {
-        for x in 0..width {
-            pos = (y * width + x) as i128;
-
-            if (countbits <= 8) {
-                let result = if (p[p_idx as usize] & (1 << (8 - countbits))) != 0 {
-                    0
-                } else {
-                    1
-                };
-
-                datauchar[pos as usize] = result;
-            }
-            if ((countbits > 8) || (x == width - 1)) {
-                p_idx += 1;
-                countbits = 1;
-            };
-        }
-    }
-}
 
 pub fn vc_read_image(file_name: &str) -> IVC {
 
@@ -179,15 +110,13 @@ pub fn vc_read_image(file_name: &str) -> IVC {
     let mut levels: i32 = 256;
     let mut channels: i32 = 1;
 
-    let sizeofbinarydata: i64;
-
     let mut image: IVC;
 
     let mut file = File::open(file_name).unwrap(); // Panic if file doesnt exist
 
+
     let (file_content, bytecount) = netpbm_get_token(file_name).unwrap();
     let header = file_content.get(0..4).unwrap();
-    println!("header: {:?}", header);
 
     if header[0] == "P4" {
         channels = 1;
@@ -208,7 +137,67 @@ pub fn vc_read_image(file_name: &str) -> IVC {
 
     }
 
-    file.seek(io::SeekFrom::Start((bytecount as u64))).unwrap();
+    file.seek(io::SeekFrom::Start(bytecount as u64)).unwrap();
+
+    let mut content:  Vec<u8> = Vec::new();
+
+    file.read_to_end(&mut content).unwrap();
+
+    image.data = content;
 
     image
+}
+
+
+pub fn vc_write_image(file_name: &str, mut image: IVC) -> Result<()> {
+
+    let header: String;
+
+    if image.levels != 2 {
+        let file_type = if image.channels == 1 {
+            "P5"
+        } else {
+            "P6"
+        };
+        
+        header = format!("{} \n{} {} \n{}\n", file_type, image.width, image.height, image.levels - 1);
+    } else {
+        header = format!("{} \n{} {}\n", "P4", image.width, image.height)
+    }
+
+    let mut header_as_bytes = header.as_bytes().to_vec();
+
+    let mut file = File::create(file_name).unwrap();
+
+    let mut content: Vec<u8> = Vec::new();
+
+    content.append(&mut header_as_bytes); // Append Header
+
+    content.append(&mut image.data); // Append Image Data
+
+    file.write_all(&content).unwrap();
+    Ok(())
+}
+
+
+pub fn vc_convert_to_grayscale(src: &IVC) -> Result<IVC> {
+    let mut dst = IVC::new(src.width, src.height, 1, src.levels);
+
+    for y in 0..src.height {
+        for x in 0..src.width {
+            let pos_src = y * src.bytesperline + x * src.channels;
+
+            let r = src.data[pos_src as usize];
+            let g = src.data[(pos_src + 1) as usize];
+            let b = src.data[(pos_src + 2) as usize];
+
+            let gray = (r as f64 * 0.299) + (g as f64 * 0.587) + (b as f64 * 0.114);
+            let gray_u8 = gray.round() as u8;
+
+            let pos_dst = y * dst.bytesperline + x;
+            dst.data[pos_dst as usize] = gray_u8;
+        }
+    }
+
+    Ok(dst)
 }
